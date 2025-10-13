@@ -65,6 +65,8 @@ class ExerciseDatabase:
                 "equipment": ["Mat"],
                 "level": "Beginner",
                 "reps": "10-12 reps/side",
+                "intensity": "RPE 3-4",
+                "rest": "30-45 sec",
                 "benefits": "Improves core control & lumbar stability",
                 "target_areas": ["Core", "Stomach"],
                 "rating": 4.5,
@@ -84,6 +86,8 @@ class ExerciseDatabase:
                 "equipment": ["Mat", "Small Cushion"],
                 "level": "Beginner",
                 "reps": "10-12 reps/arm",
+                "intensity": "RPE 3-4",
+                "rest": "30-45 sec",
                 "benefits": "Strengthens rotator cuff & improves posture",
                 "target_areas": ["Arms", "Back"],
                 "rating": 4.2,
@@ -102,7 +106,9 @@ class ExerciseDatabase:
                 "type": "Spinal Extension",
                 "equipment": ["Mat"],
                 "level": "Intermediate",
-                "reps": "6-8 reps",
+                "reps": "6-8 reps / 15-30 sec holds",
+                "intensity": "RPE 4-6",
+                "rest": "30-60 sec",
                 "benefits": "Opens chest & improves spinal flexibility",
                 "target_areas": ["Back", "Chest"],
                 "rating": 4.7,
@@ -116,31 +122,14 @@ class ExerciseDatabase:
                 "demo_video": "How to Do Upward-Facing Dog Pose in Yoga 1.mp4",
                 "common_mistakes": ["Sinking shoulders", "Overarching neck", "Not engaging legs"]
             },
-            "vertical_toe_touches": {
-                "name": "Vertical Toe Touches",
-                "type": "Core Flexibility",
-                "equipment": ["Mat"],
-                "level": "Beginner",
-                "reps": "10-12 reps",
-                "benefits": "Improves core strength & hamstring flexibility",
-                "target_areas": ["Core", "Legs"],
-                "rating": 4.0,
-                "steps": [
-                    "Lie on back with legs straight up",
-                    "Reach hands toward toes",
-                    "Lift shoulder blades off ground",
-                    "Touch toes if possible",
-                    "Lower slowly and repeat"
-                ],
-                "demo_video": "Vertical Toe Touch Bodyweight Training Exercise 1.mp4",
-                "common_mistakes": ["Using neck to pull up", "Jerky movements", "Not engaging core"]
-            },
             "v_ups": {
                 "name": "V-Ups",
                 "type": "Core Strength",
                 "equipment": ["Mat"],
                 "level": "Intermediate",
-                "reps": "8-12 reps",
+                "reps": "AMRAP or 8-12 reps",
+                "intensity": "RPE 6-7",
+                "rest": "60-90 sec",
                 "benefits": "Builds core strength & coordination",
                 "target_areas": ["Core", "Stomach"],
                 "rating": 4.3,
@@ -160,6 +149,8 @@ class ExerciseDatabase:
                 "equipment": ["Mat"],
                 "level": "Beginner",
                 "reps": "10-12 reps/side",
+                "intensity": "RPE 4-5",
+                "rest": "45-60 sec",
                 "benefits": "Strengthens glutes & improves hip mobility",
                 "target_areas": ["Glutes", "Legs"],
                 "rating": 4.4,
@@ -183,6 +174,8 @@ class ExerciseDatabase:
                 "equipment": ["Barbell", "Squat Rack"],
                 "level": "Intermediate",
                 "reps": "8-12 reps",
+                "intensity": "70-75% 1RM",
+                "rest": "90-120 sec",
                 "benefits": "Builds overall leg strength and power",
                 "target_areas": ["Legs", "Glutes", "Core"],
                 "rating": 4.8,
@@ -202,6 +195,8 @@ class ExerciseDatabase:
                 "equipment": ["Barbell", "Bench"],
                 "level": "Intermediate",
                 "reps": "6-10 reps",
+                "intensity": "70-80% 1RM",
+                "rest": "90-180 sec",
                 "benefits": "Develops chest, shoulders, and triceps strength",
                 "target_areas": ["Chest", "Arms", "Shoulders"],
                 "rating": 4.7,
@@ -289,19 +284,23 @@ class FitnessAdvisor:
             - Weight Change: {user_profile.get('weight_change', 'None')}
 
             Instructions:
-            1. Start with a warm, casual greeting using their name
-            2. Provide a BRIEF PERSONALIZED ASSESSMENT (2-3 sentences) addressing their specific situation
-            3. Give CUSTOMIZED RECOMMENDATIONS based on their medical conditions, activity level, and goals
+            1. Start with a warm, casual greeting using their name.
+            2. Provide a BRIEF PERSONALIZED ASSESSMENT (2-3 sentences) addressing their specific situation.
+            3. Give CUSTOMIZED RECOMMENDATIONS based on medical conditions, activity level, and goals.
             4. For each recommended exercise, provide a full tutorial in this format:
                 - Exercise Name
                 - Brief Benefit (1-2 sentences)
-                - How to do it: step-by-step guide, clearly numbered as Step 1, Step 2, Step 3, etc. (each step on a new line)
+                - How to do it: step-by-step guide, clearly numbered as Step 1, Step 2, Step 3, etc.
                 - Sets/Reps or Duration
-            5. Be specific about why certain exercises are chosen for THEIR situation
-            6. Address any medical concerns or limitations mentioned
-            7. Make it conversational and encouraging
-            8. Include safety considerations if they have any medical conditions
-            9. Suggest progression based on their current fitness level
+                - Intensity (use RPE 1–10 for bodyweight/mobility exercises; use %1RM or a % range for weighted exercises when appropriate)
+                - Rest between sets (give recommended rest in seconds/minutes and link to training goal, e.g., endurance/hypertrophy/strength)
+            5. Specify whether the plan is for a single session or a weekly routine, and provide a short weekly frequency schedule when applicable (e.g., "3x/week: Mon/ Wed/ Fri").
+            6. If the user's goals include cardiovascular health, include explicit cardio components (type, duration, and intensity/RPE).
+            7. For bodyweight strength exercises where the user's exact strength is unknown (e.g., push-ups, pull-ups), recommend AMRAP (as many reps as possible with good form) or a scaled alternative, rather than a fixed rep target.
+            8. Use ACE-style rest guidance: endurance 30–60s, hypertrophy 30–90s, strength 2–5min. Tailor rest to each exercise and the user's level.
+            9. Avoid overclaiming clinical benefits. Example: do NOT state that 'wall push-ups cure frozen shoulder.' If mentioning frozen shoulder, explain that wall push-ups may be appropriate in later rehab phases and recommend referral to a clinician/physiotherapist for phase-appropriate rehab.
+            10. Be specific about progression (how to progress intensity, reps, %1RM, or RPE across weeks).
+            11. Keep tone conversational, encouraging, and safety-first. Include safety cues and when to stop or seek medical advice.
 
             Make the response feel like it's written specifically for {user_profile['name']} based on all their inputs, not generic advice.
             """
@@ -394,7 +393,7 @@ st.markdown("#### 🏃‍♂️ Activity Level & Exercise History")
 col3, col4 = st.columns(2)
 with col3:
     detailed_activity_level = st.selectbox("Activity Level", 
-        ["Sedentary", "Lightly Active", "Moderately Active", "Active", "Super Active"])
+        ["Sedentary", "Lightly Active", "Moderately Active", "Active"])
     sitting_time = st.number_input("Average Sitting Time (hrs/day)", 0, 16, 8)
     
     # Weight change
@@ -483,6 +482,8 @@ with col7:
                                      "Bodyweight Only"]
     equipment = st.multiselect("Available Equipment", available_equipment_options)
 
+    workout_frequency = st.selectbox("Preferred workout days per week", [1,2,3,4,5,6,7], index=2)
+    
 with col8:
     workout_duration = st.selectbox("Preferred Workout Duration", 
         ["15-20 minutes", "20-30 minutes", "30-45 minutes", "45-60 minutes"])
@@ -528,7 +529,8 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
                 "physical_issues": physical_issues,
                 "equipment": equipment,
                 "workout_location": workout_location,
-                "workout_duration": workout_duration
+                "workout_duration": workout_duration,
+                "preferred_weekly_frequency": workout_frequency  # <-- added
             }
             
             # Store in session state
@@ -653,10 +655,12 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
   <h3 style='color:#1565c0;margin-bottom:8px;'>⭐ {exercise['name']} <span style='font-size:0.8em;color:#888;'>(Rating: {exercise['rating']}/5)</span></h3>
   <b>Benefit:</b> {exercise['benefits']}<br>
   <b>Type:</b> {exercise['type']}<br>
-  <b>Equipment:</b> {', '.join(exercise['equipment'])}<br>
-  <b>Level:</b> {exercise['level']}<br>
-  <b>Target Areas:</b> {', '.join(exercise['target_areas'])}<br>
-  <b>Sets/Reps:</b> {exercise['reps']}<br>
+  <b>Equipment:</b> {', '.join(exercise.get('equipment', []))}<br>
+  <b>Level:</b> {exercise.get('level', 'N/A')}<br>
+  <b>Target Areas:</b> {', '.join(exercise.get('target_areas', []))}<br>
+  <b>Sets/Reps:</b> {exercise.get('reps', 'N/A')}<br>
+  <b>Intensity:</b> {exercise.get('intensity', 'RPE guidance will be provided in plan')}<br>
+  <b>Rest between sets:</b> {exercise.get('rest', 'See plan guidelines')}<br>
   <div style='margin-top:10px;margin-bottom:10px;'><b>📝 Step-by-Step Guide:</b></div>
   <ol style='margin-left:20px;'>
     {''.join([f'<li>{step}</li>' for step in exercise['steps']])}
