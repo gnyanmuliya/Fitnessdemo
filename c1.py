@@ -70,6 +70,8 @@ class ExerciseDatabase:
                 "benefits": "Improves core control & lumbar stability",
                 "target_areas": ["Core", "Stomach"],
                 "rating": 4.5,
+                "safety": "Keep a neutral spine and avoid excessive lumbar extension. Stop if you feel sharp back pain.",
+                "contraindications": ["acute lower back pain", "recent spinal surgery", "severe disc herniation"],
                 "steps": [
                     "Lie on your back with knees bent at 90 degrees",
                     "Extend opposite arm and leg slowly",
@@ -91,6 +93,8 @@ class ExerciseDatabase:
                 "benefits": "Strengthens rotator cuff & improves posture",
                 "target_areas": ["Arms", "Back"],
                 "rating": 4.2,
+                "safety": "Move slowly and keep range small if you have shoulder pain. Stop if you experience pinching or sharp pain.",
+                "contraindications": ["acute rotator cuff tear", "recent shoulder surgery", "severe shoulder impingement"],
                 "steps": [
                     "Lie on your side with arm at 90 degrees",
                     "Place cushion under head for support",
@@ -112,6 +116,8 @@ class ExerciseDatabase:
                 "benefits": "Opens chest & improves spinal flexibility",
                 "target_areas": ["Back", "Chest"],
                 "rating": 4.7,
+                "safety": "Avoid if you have acute low back pain or recent spinal injury; perform a gentler cobra or supported bridge instead.",
+                "contraindications": ["acute lower back pain", "recent spinal surgery"],
                 "steps": [
                     "Start in plank position",
                     "Lower hips while lifting chest",
@@ -133,6 +139,8 @@ class ExerciseDatabase:
                 "benefits": "Builds core strength & coordination",
                 "target_areas": ["Core", "Stomach"],
                 "rating": 4.3,
+                "safety": "Keep neck neutral and avoid jerking; reduce ROM or do dead-bugs if you have low back issues.",
+                "contraindications": ["acute lower back pain", "hernia"],
                 "steps": [
                     "Lie flat with arms overhead",
                     "Simultaneously lift legs and torso",
@@ -154,6 +162,8 @@ class ExerciseDatabase:
                 "benefits": "Strengthens glutes & improves hip mobility",
                 "target_areas": ["Glutes", "Legs"],
                 "rating": 4.4,
+                "safety": "Keep core braced and avoid excessive lumbar rotation. Reduce range if you feel back strain.",
+                "contraindications": ["acute lower back pain"],
                 "steps": [
                     "Start on hands and knees",
                     "Keep knee bent and lift leg to side",
@@ -179,6 +189,8 @@ class ExerciseDatabase:
                 "benefits": "Builds overall leg strength and power",
                 "target_areas": ["Legs", "Glutes", "Core"],
                 "rating": 4.8,
+                "safety": "Use proper set-up and avoid deep squats if you have knee pain; consider goblet squats as an alternative.",
+                "contraindications": ["acute knee injury", "recent knee surgery", "severe lower back pain"],
                 "steps": [
                     "Position bar on upper traps",
                     "Stand with feet shoulder-width apart",
@@ -200,6 +212,8 @@ class ExerciseDatabase:
                 "benefits": "Develops chest, shoulders, and triceps strength",
                 "target_areas": ["Chest", "Arms", "Shoulders"],
                 "rating": 4.7,
+                "safety": "Use a spotter for heavy loads; avoid if you have uncontrolled shoulder pain—use dumbbell presses or push-ups as alternatives.",
+                "contraindications": ["acute shoulder injury", "recent shoulder surgery"],
                 "steps": [
                     "Lie flat on bench with feet planted",
                     "Grip bar slightly wider than shoulders",
@@ -241,6 +255,18 @@ class ExerciseDatabase:
                 filtered[key] = exercise
         return filtered
 
+    def is_contraindicated(self, exercise: Dict, medical_conditions: List[str]) -> bool:
+        """Return True if any of the user's medical conditions match the exercise contraindications"""
+        if not medical_conditions or medical_conditions == ["None"]:
+            return False
+        ex_contras = [c.lower() for c in exercise.get("contraindications", [])]
+        user_conds = [c.lower() for c in medical_conditions]
+        # Simple substring match
+        for uc in user_conds:
+            for ec in ex_contras:
+                if ec in uc or uc in ec:
+                    return True
+        return False
 # ---------------- FITNESS ADVISOR CLASS ----------------
 class FitnessAdvisor:
     def __init__(self, api_key: str, endpoint_url: str):
@@ -249,22 +275,18 @@ class FitnessAdvisor:
         self.exercise_db = ExerciseDatabase()
     
     def generate_personalized_response(self, user_profile: Dict) -> str:
-        """Generate a highly personalized and casual response"""
+        """Generate a highly personalized and casual response (robust parsing + debug on failure)"""
         try:
             # Create a comprehensive prompt based on user profile
             casual_greeting = f"Hey {user_profile['name']}! 😊"
-            
-            # Analyze user's lifestyle
             lifestyle_analysis = self.analyze_lifestyle(user_profile)
-            
-            # Create detailed prompt
             prompt = f"""
             You are FriskaAI, a friendly and knowledgeable personal fitness coach. Start with a warm, casual greeting and create a highly personalized workout plan.
 
             Client Profile:
             - Name: {user_profile['name']}
             - Age: {user_profile['age']}, Gender: {user_profile['gender']}
-            - Height: {user_profile['height']}cm, Weight: {user_profile['weight']}kg
+            - Height: {user_profile.get('height_cm', user_profile.get('height','N/A'))}cm, Weight: {user_profile.get('weight_kg', user_profile.get('weight','N/A'))}kg
             - Fitness Level: {user_profile['fitness_level']}
             - Goals: {', '.join(user_profile.get('goals', []))}
             - Target Areas: {', '.join(user_profile.get('target_areas', []))}
@@ -273,6 +295,7 @@ class FitnessAdvisor:
             - Activity Level: {user_profile.get('detailed_activity_level', 'Moderately Active')}
             - Current Exercise: {user_profile.get('current_exercise', 'No')}
             - Exercise Frequency: {user_profile.get('exercise_frequency', '0')} times/week
+            - Preferred Weekly Frequency: {user_profile.get('preferred_weekly_frequency', '3')} days/week
             - Daily Steps: {user_profile.get('daily_steps', 'Not specified')}
             - Sitting Time: {user_profile.get('sitting_time', 'Not specified')} hours/day
             - Medical Conditions: {', '.join(user_profile.get('medical_conditions', ['None']))}
@@ -285,31 +308,34 @@ class FitnessAdvisor:
 
             Instructions:
             1. Start with a warm, casual greeting using their name.
-            2. Provide a BRIEF PERSONALIZED ASSESSMENT (2-3 sentences) addressing their specific situation.
-            3. Give CUSTOMIZED RECOMMENDATIONS based on medical conditions, activity level, and goals.
-            4. For each recommended exercise, provide a full tutorial in this format:
+            2. Provide a BRIEF PERSONALIZED ASSESSMENT (2-3 sentences) addressing their specific situation and goals.
+            3. Prioritize content toward the user's selected health goals; explicitly include cardio if cardiovascular health is a goal.
+            4. Give CUSTOMIZED RECOMMENDATIONS based on medical conditions, activity level, and goals.
+            5. For each recommended exercise, provide a full tutorial in this format:
                 - Exercise Name
                 - Brief Benefit (1-2 sentences)
                 - How to do it: step-by-step guide, clearly numbered as Step 1, Step 2, Step 3, etc.
                 - Sets/Reps or Duration
                 - Intensity (use RPE 1–10 for bodyweight/mobility exercises; use %1RM or a % range for weighted exercises when appropriate)
-                - Rest between sets (give recommended rest in seconds/minutes and link to training goal, e.g., endurance/hypertrophy/strength)
-            5. Specify whether the plan is for a single session or a weekly routine, and provide a short weekly frequency schedule when applicable (e.g., "3x/week: Mon/ Wed/ Fri").
-            6. If the user's goals include cardiovascular health, include explicit cardio components (type, duration, and intensity/RPE).
-            7. For bodyweight strength exercises where the user's exact strength is unknown (e.g., push-ups, pull-ups), recommend AMRAP (as many reps as possible with good form) or a scaled alternative, rather than a fixed rep target.
-            8. Use ACE-style rest guidance: endurance 30–60s, hypertrophy 30–90s, strength 2–5min. Tailor rest to each exercise and the user's level.
-            9. Avoid overclaiming clinical benefits. Example: do NOT state that 'wall push-ups cure frozen shoulder.' If mentioning frozen shoulder, explain that wall push-ups may be appropriate in later rehab phases and recommend referral to a clinician/physiotherapist for phase-appropriate rehab.
-            10. Be specific about progression (how to progress intensity, reps, %1RM, or RPE across weeks).
-            11. Keep tone conversational, encouraging, and safety-first. Include safety cues and when to stop or seek medical advice.
+                - Rest between sets (give recommended rest in seconds/minutes and link to training goal)
+                - Safety Cue: 1-2 sentences (explicit safety advice and what to watch for)
+                - Contraindications: list medical conditions that would make this exercise inappropriate (if any)
+            6. If an exercise would be contraindicated for the user's listed medical conditions, do NOT recommend it; instead suggest a safer alternative and explain why.
+            7. Specify whether the plan is for a single session or a weekly routine, and provide a short weekly frequency schedule when applicable.
+            8. For bodyweight strength exercises where the user's exact strength is unknown, recommend AMRAP or scaled alternatives rather than a fixed rep target.
+            9. Use ACE-style rest guidance and tailor rest to each exercise and the user's level.
+            10. Avoid overclaiming clinical benefits; when in doubt recommend referral to a clinician/physiotherapist.
+            11. Be specific about progression and include short notes on when/how to progress intensity or load.
+            12. Keep tone conversational, encouraging, and safety-first. Include safety cues and when to stop or seek medical advice.
 
             Make the response feel like it's written specifically for {user_profile['name']} based on all their inputs, not generic advice.
             """
-            
+
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}"
             }
-            
+
             payload = {
                 "model": "mistral-small",
                 "messages": [
@@ -319,15 +345,54 @@ class FitnessAdvisor:
                 "temperature": 0.7,
                 "max_tokens": 1500
             }
-            
-            response = requests.post(self.endpoint_url, headers=headers, json=payload)
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result["choices"][0]["message"]["content"]
+
+            # call the API with a timeout
+            resp = requests.post(self.endpoint_url, headers=headers, json=payload, timeout=30)
+
+            # on success try multiple extraction patterns
+            if resp.status_code == 200:
+                try:
+                    result = resp.json()
+                except Exception:
+                    # Not JSON - return raw text for debugging
+                    return resp.text or "Empty response from model (non-JSON)."
+
+                # Common patterns: choices[].message.content, choices[].text, output, result['choices'][0]['message']['content']
+                content = None
+                if isinstance(result, dict):
+                    choices = result.get("choices")
+                    if choices and len(choices) > 0:
+                        first = choices[0]
+                        if isinstance(first, dict):
+                            # OpenAI-style chat completion
+                            msg = first.get("message")
+                            if msg and isinstance(msg, dict) and msg.get("content"):
+                                content = msg["content"]
+                            # older/other variants
+                            elif first.get("text"):
+                                content = first.get("text")
+                            elif first.get("message") and isinstance(first.get("message"), str):
+                                content = first.get("message")
+                    # other vendor keys
+                    if not content:
+                        if "output" in result:
+                            content = result["output"]
+                        elif "data" in result:
+                            content = json.dumps(result["data"])
+                # fallback to stringified JSON
+                if not content:
+                    try:
+                        content = json.dumps(result, indent=2)
+                    except Exception:
+                        content = str(result)
+                return content
             else:
-                return f"Error generating response: {response.text}"
-                
+                # return status and body to make debugging visible in UI
+                text = resp.text
+                return f"Error generating response: status={resp.status_code} body={text}"
+
+        except requests.exceptions.Timeout:
+            return "Error: The API request timed out."
         except Exception as e:
             return f"Error: {str(e)}"
     
@@ -383,10 +448,34 @@ with col1:
     age = st.number_input("How old are you?*", 16, 80, 25)
     gender = st.selectbox("Gender", ["Male", "Female", "Other"])
 
+    # New: units selection for height & weight
+    height_unit = st.selectbox("Height unit", ["cm", "ft + in"], index=0)
+    if height_unit == "cm":
+        height_cm_input = st.number_input("Height (cm)", 140, 220, 170)
+    else:
+        col_h1, col_h2 = st.columns([1,1])
+        with col_h1:
+            height_ft = st.number_input("Height (ft)", 4, 7, 5)
+        with col_h2:
+            height_in = st.number_input("Height (in)", 0, 11, 7)
+        height_cm_input = int(height_ft * 30.48 + height_in * 2.54)
+
 with col2:
-    height = st.number_input("Height (cm)", 140, 220, 170)
-    weight = st.number_input("Weight (kg)", 40, 150, 70)
+    weight_unit = st.selectbox("Weight unit", ["kg", "lbs"], index=0)
+    if weight_unit == "kg":
+        weight_kg_input = st.number_input("Weight (kg)", 40, 150, 70)
+    else:
+        weight_lbs = st.number_input("Weight (lbs)", 88, 330, 154)
+        weight_kg_input = round(weight_lbs * 0.453592, 1)
+
     fitness_level = st.selectbox("How would you describe your current fitness level?", ["Beginner", "Intermediate", "Advanced"])
+
+# Calculate BMI (displayed when inputs available)
+try:
+    bmi = round(weight_kg_input / ((height_cm_input/100)**2), 1)
+    st.info(f"Calculated BMI: {bmi} kg/m²")
+except Exception:
+    bmi = None
 
 # Activity Level and Exercise History
 st.markdown("#### 🏃‍♂️ Activity Level & Exercise History")
@@ -396,11 +485,12 @@ with col3:
         ["Sedentary", "Lightly Active", "Moderately Active", "Active"])
     sitting_time = st.number_input("Average Sitting Time (hrs/day)", 0, 16, 8)
     
-    # Weight change
+    # Weight change (amount + timeframe)
     weight_change_type = st.selectbox("Recent Weight Change", ["No Change", "Gained Weight", "Lost Weight"])
     if weight_change_type != "No Change":
         weight_change_amount = st.number_input(f"How much weight? (kg)", 0.5, 50.0, 2.0)
-        weight_change = f"{weight_change_type}: {weight_change_amount} kg"
+        weight_change_timeframe = st.selectbox("Timeframe for weight change", ["Within 3 months", "Within 6 months", "Within 9 months", "Over 1 year"])
+        weight_change = f"{weight_change_type}: {weight_change_amount} kg ({weight_change_timeframe})"
     else:
         weight_change = "No Change"
 
@@ -408,10 +498,14 @@ with col4:
     current_exercise = st.selectbox("Do you currently exercise?", ["Yes", "No"])
     if current_exercise == "Yes":
         exercise_type = st.text_input("Type of Physical Activity", placeholder="e.g., walking, swimming, yoga")
-        exercise_frequency = st.number_input("Exercise Frequency (times/week)", 0, 14, 3)
+        # Clarified label: past/existing frequency
+        exercise_frequency = st.number_input("Past exercise frequency (times/week)", 0, 14, 3)
+        # New: total workout experience duration
+        workout_experience_years = st.selectbox("Total workout experience", ["<1 year", "1-2 years", "2-4 years", "4+ years"])
     else:
         exercise_type = "None"
         exercise_frequency = 0
+        workout_experience_years = "<1 year"
     
     daily_steps = st.number_input("Daily Step Count (if known)", 0, 50000, 5000)
     preferred_time = st.selectbox("Preferred Exercise Time", ["Morning", "Afternoon", "Evening", "No Preference"])
@@ -436,14 +530,24 @@ with col6:
 # Health & Wellness Goals
 st.markdown("#### 🎯 Health & Wellness Goals")
 goals = st.multiselect("Please select all that apply:", 
-    ["Weight Management", "Disease Management", "Vital Monitoring", "Fitness Improvement", 
+    ["Weight Management", "Health Condition Management", "Vital Monitoring", "Fitness Improvement", 
      "Nutritional Monitoring", "Improve Cardiovascular Fitness", "Build Muscular Strength", 
-     "Injury Rehab", "Reduce Stress", "Improve Flexibility", "Reduce Back Pain", 
-     "Lower Cholesterol/Blood Pressure", "Stop Smoking", "Feel Better / Look Better"])
+     "Rehabilitation & Corrective Exercise", "Reduce Stress", "Improve Flexibility & Mobility", "Improve Posture & Balance",
+     "Increase Energy & Sleep Quality", "Manage/Prevent Lifestyle Disorders", "Improve Hormonal Balance", 
+     "Reduce Back Pain", "Feel Better / Look Better", "Stop Smoking"])
+# Barriers to goals (recommended addition)
+st.markdown("**Any barriers that make it difficult to achieve your fitness goals?**")
+barriers = st.multiselect("Select barriers (if any):", [
+    "Difficulty maintaining consistency", "Limited access to reliable information", "Lack of structure or guidance",
+    "Time constraints", "Challenges tracking progress", "Limited accountability/motivation", "Other"
+])
+if "Other" in barriers:
+    barriers_other = st.text_input("If other, please specify:")
 
 # Target Areas
-target_areas = st.multiselect("Which body parts do you want to focus on?", 
-    ["Full Body", "Core", "Stomach", "Back", "Chest", "Arms", "Legs", "Glutes", "Shoulders"])
+target_areas = st.multiselect("Which body parts or training focus do you want?", 
+    ["Full Body", "Upper Body", "Lower Body", "Anterior (front)", "Posterior (back)", "Core & Abs", "Back", 
+     "Chest", "Arms", "Legs", "Glutes", "Shoulders"])
 
 # Medical Conditions (only two prompts: medical and physical limitations)
 st.markdown("#### 🏥 Medical Conditions")
@@ -467,22 +571,20 @@ physical_issues = st.text_area("Any physical limitations, injuries, or pain? (e.
 st.markdown("#### 🏠 Workout Setup")
 col7, col8 = st.columns(2)
 with col7:
-    workout_location = st.selectbox("Preferred Location", ["Home", "Gym", "Outdoor"])
+    workout_location = st.selectbox("Preferred Location / Gym Type", ["Home", "Garage gym", "Small gym", "Large gym", "Outdoor"])
 
-    # Equipment based on location
+    # Equipment based on location (expanded categories)
     if workout_location == "Home":
-        available_equipment_options = ["None", "Mat", "Dumbbells", "Resistance Bands", "Small Cushion", 
-                                     "Towel Roll", "Chair", "Wall", "Kettlebell", "Pull-up Bar"]
-    elif workout_location == "Gym":
-        available_equipment_options = ["Mat", "Barbell", "Dumbbells", "Cable Machine", "Treadmill", 
-                                     "Stationary Bike", "Squat Rack", "Bench", "Pull-up Bar", 
-                                     "Leg Press", "Smith Machine", "Resistance Machines", "Towel Roll", "Chair", "Wall", "Small Cushion", "Kettlebell"]
-    else:  # Outdoor
-        available_equipment_options = ["None", "Resistance Bands", "Mat", "Jump Rope", 
-                                     "Bodyweight Only"]
+        available_equipment_options = ["None", "Mat", "Dumbbells", "Resistance Bands", "Kettlebell", "Chair", "Wall", "Pull-up Bar", "Towel Roll", "Small Cushion"]
+    elif workout_location == "Garage gym":
+        available_equipment_options = ["Mat", "Barbell", "Dumbbells", "Squat Rack", "Bench", "Pull-up Bar", "Kettlebell", "Resistance Bands"]
+    elif workout_location == "Small gym":
+        available_equipment_options = ["Mat", "Dumbbells", "Cable Machine", "Treadmill", "Stationary Bike", "Bench", "Pull-up Bar", "Leg Press"]
+    else:  # Large gym or Outdoor
+        available_equipment_options = ["Mat", "Barbell", "Dumbbells", "Cable Machine", "Treadmill", "Stationary Bike", "Squat Rack", "Bench", "Pull-up Bar", "Leg Press", "Smith Machine", "Resistance Machines", "Jump Rope", "Bodyweight Only"]
     equipment = st.multiselect("Available Equipment", available_equipment_options)
 
-    workout_frequency = st.selectbox("Preferred workout days per week", [1,2,3,4,5,6,7], index=2)
+    workout_frequency = st.selectbox("Preferred workout days per week (desired)", [1,2,3,4,5,6,7], index=2)
     
 with col8:
     workout_duration = st.selectbox("Preferred Workout Duration", 
@@ -510,15 +612,17 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
                 "name": name,
                 "age": age,
                 "gender": gender,
-                "height": height,
-                "weight": weight,
+                "height_cm": height_cm_input,
+                "weight_kg": weight_kg_input,
+                "bmi": bmi,
                 "fitness_level": fitness_level,
                 "detailed_activity_level": detailed_activity_level,
                 "sitting_time": sitting_time,
                 "weight_change": weight_change,
                 "current_exercise": current_exercise,
                 "exercise_type": exercise_type,
-                "exercise_frequency": exercise_frequency,
+                "exercise_frequency": exercise_frequency,  # past frequency
+                "workout_experience_years": workout_experience_years,
                 "daily_steps": daily_steps,
                 "preferred_time": preferred_time,
                 "smoking": smoking,
@@ -530,7 +634,8 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
                 "equipment": equipment,
                 "workout_location": workout_location,
                 "workout_duration": workout_duration,
-                "preferred_weekly_frequency": workout_frequency  # <-- added
+                "preferred_weekly_frequency": workout_frequency,  # desired frequency
+                "barriers": barriers
             }
             
             # Store in session state
@@ -643,16 +748,26 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
                 exercise_names = list(dict.fromkeys(exercise_names))
 
                 exercise_details = []
+                excluded_exercises = []
+                user_medical_conditions = user_profile.get("medical_conditions", ["None"])
                 for ex_name in exercise_names:
                     for key, ex in fitness_advisor.exercise_db.exercises.items():
                         if ex['name'] == ex_name:
+                            # filter out contraindicated exercises
+                            if fitness_advisor.exercise_db.is_contraindicated(ex, user_medical_conditions):
+                                excluded_exercises.append(ex['name'])
+                                continue
                             exercise_details.append((key, ex))
+
+                if excluded_exercises:
+                    st.warning("Some exercises were excluded because they may be unsuitable for your medical conditions: " + ", ".join(excluded_exercises))
+                    st.info("Where possible, the plan includes safer alternatives. If unsure, consult your clinician or physiotherapist.")
 
                 if exercise_details:
                     for i, (key, exercise) in enumerate(exercise_details):
                         st.markdown(f"""
 <div style='background:#e3f2fd;border-radius:10px;padding:18px;margin-bottom:18px;box-shadow:0 2px 8px #bdbdbd;'>
-  <h3 style='color:#1565c0;margin-bottom:8px;'>⭐ {exercise['name']} <span style='font-size:0.8em;color:#888;'>(Rating: {exercise['rating']}/5)</span></h3>
+  <h3 style='color:#1565c0;margin-bottom:8px;'>⭐ {exercise['name']} <span style='font-size:0.8em;color:#888;'>(Rating: {exercise.get('rating','N/A')}/5)</span></h3>
   <b>Benefit:</b> {exercise['benefits']}<br>
   <b>Type:</b> {exercise['type']}<br>
   <b>Equipment:</b> {', '.join(exercise.get('equipment', []))}<br>
@@ -661,6 +776,7 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
   <b>Sets/Reps:</b> {exercise.get('reps', 'N/A')}<br>
   <b>Intensity:</b> {exercise.get('intensity', 'RPE guidance will be provided in plan')}<br>
   <b>Rest between sets:</b> {exercise.get('rest', 'See plan guidelines')}<br>
+  <b>Safety:</b> {exercise.get('safety', 'Follow general safety guidelines: move slowly, breathe, stop on sharp pain, seek medical advice if unsure.')}<br>
   <div style='margin-top:10px;margin-bottom:10px;'><b>📝 Step-by-Step Guide:</b></div>
   <ol style='margin-left:20px;'>
     {''.join([f'<li>{step}</li>' for step in exercise['steps']])}
