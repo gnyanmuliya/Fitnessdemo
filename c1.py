@@ -4,6 +4,8 @@ import json
 import os
 import pandas as pd
 from typing import Dict, List, Optional
+import re
+import random
 
 # ---------------- CONFIG ----------------
 API_KEY = st.secrets["API_KEY"]
@@ -229,29 +231,46 @@ class ExerciseDatabase:
     def get_exercises_by_target_area(self, target_areas: List[str], workout_location: str = "Home") -> Dict:
         """Filter exercises by target body areas and location"""
         all_exercises = self.exercises.copy()
-        if workout_location == "Gym":
+        # treat any location containing 'gym' as a gym
+        is_gym = isinstance(workout_location, str) and "gym" in workout_location.lower()
+        if is_gym:
             all_exercises.update(self.gym_exercises)
             
         filtered = {}
         for key, exercise in all_exercises.items():
-            if any(area in exercise["target_areas"] for area in target_areas):
+            # If user asked for Full Body, return all exercises
+            if "Full Body" in target_areas:
+                filtered[key] = exercise
+                continue
+            if any(area in exercise.get("target_areas", []) for area in target_areas):
                 filtered[key] = exercise
         return filtered
     
     def get_exercises_by_equipment(self, available_equipment: List[str], workout_location: str = "Home") -> Dict:
         """Filter exercises by available equipment and location"""
         all_exercises = self.exercises.copy()
-        if workout_location == "Gym":
+        is_gym = isinstance(workout_location, str) and "gym" in workout_location.lower()
+        if is_gym:
             all_exercises.update(self.gym_exercises)
             
         filtered = {}
         for key, exercise in all_exercises.items():
-            if workout_location == "Home":
-                # For home, only include if equipment is available (don't default to Mat)
-                if all(equip in available_equipment for equip in exercise["equipment"]):
+            # If large gym (or any 'large gym' phrasing), assume all equipment available
+            if isinstance(workout_location, str) and "large gym" in workout_location.lower():
+                filtered[key] = exercise
+                continue
+
+            # For home, only include if equipment is available (exercise may require multiple pieces)
+            if workout_location.lower().find("home") != -1:
+                reqs = [e.lower() for e in exercise.get("equipment", [])]
+                avail = [a.lower() for a in (available_equipment or [])]
+                # treat "none" or "bodyweight only" specially
+                if "none" in reqs or "bodyweight only" in reqs:
+                    filtered[key] = exercise
+                elif all(r in avail for r in reqs):
                     filtered[key] = exercise
             else:
-                # For gym, assume most equipment is available
+                # For other gyms/outdoor assume included
                 filtered[key] = exercise
         return filtered
 
@@ -273,62 +292,96 @@ class FitnessAdvisor:
         self.api_key = api_key
         self.endpoint_url = endpoint_url
         self.exercise_db = ExerciseDatabase()
+
+    def analyze_lifestyle(self, user_profile: Dict) -> str:
+        """Lightweight lifestyle summary used in prompts (prevents missing attribute errors)."""
+        activity = user_profile.get("detailed_activity_level", "Not specified")
+        freq = user_profile.get("preferred_weekly_frequency") or user_profile.get("exercise_frequency", 0)
+        steps = user_profile.get("daily_steps", "Not specified")
+        return f"Activity level: {activity}; preferred training {freq} days/week; daily steps ~{steps}."
+
     
     def generate_personalized_response(self, user_profile: Dict) -> str:
-        """Generate a highly personalized and casual response (robust parsing + debug on failure)"""
+        """Generate a conversational, structured, day-wise personalized workout plan with perfect Markdown spacing."""
         try:
-            # Create a comprehensive prompt based on user profile
-            casual_greeting = f"Hey {user_profile['name']}! 😊"
-            lifestyle_analysis = self.analyze_lifestyle(user_profile)
+            name = user_profile.get("name", "there")
+            selected_days = user_profile.get("selected_days") or []
+            sel_days_str = ", ".join(selected_days) if selected_days else f"{user_profile.get('preferred_weekly_frequency','3')} days/week"
+            goals = ", ".join(user_profile.get("goals", [])) or "General fitness"
+            fitness_level = user_profile.get("fitness_level", "Beginner")
+            location = user_profile.get("workout_location", "Home")
+
+            # ---- PROMPT ----
             prompt = f"""
-            You are FriskaAI, a friendly and knowledgeable personal fitness coach. Start with a warm, casual greeting and create a highly personalized workout plan.
+            You are **FriskaAI**, a professional and friendly personal fitness coach.  
+            Generate a fully formatted Markdown workout plan personalized for **{name}**, strictly following this order and structure.
 
-            Client Profile:
-            - Name: {user_profile['name']}
-            - Age: {user_profile['age']}, Gender: {user_profile['gender']}
-            - Height: {user_profile.get('height_cm', user_profile.get('height','N/A'))}cm, Weight: {user_profile.get('weight_kg', user_profile.get('weight','N/A'))}kg
-            - Fitness Level: {user_profile['fitness_level']}
-            - Goals: {', '.join(user_profile.get('goals', []))}
+            1️⃣ **👋 Let's Start:**  
+            Warm greeting addressing {name}, mentioning fitness level, activity, and workout location.
+
+            2️⃣ **📊 Personalized Assessment:**  
+            2–3 sentences about their goals, routine, and what plan suits them.
+
+            3️⃣ **💡 Customized Recommendations:**  
+            Brief explanation of what type of plan (strength, fat-loss, flexibility, etc.) and why it suits them.
+
+            4️⃣ **🔥 Warm-up Section:**  
+            Add 3–4 warm-up exercises (e.g., Jumping Jacks, Arm Circles, Leg Swings) with short benefits and duration.
+
+            5️⃣ **🏋️‍♂️ Day-wise Workout Plan:**  
+            Use headers like:  
+            #### Monday — Upper Body  
+            #### Wednesday — Core & Mobility  
+            #### Friday — Full Body  
+
+            ⚙️ Each exercise **must** follow this exact format — spacing and line breaks are critical:
+
+            ---
+            **Push-ups**
+
+            **Benefit:** Builds chest, shoulders, and triceps.  
+            **How to do it:**  
+            1. Start in a high plank position, hands under shoulders.  
+            2. Bend elbows and lower chest to the ground.  
+            3. Push back up to the starting position.  
+            **Sets:** 3 sets  
+            **Reps:** 10–15 reps  
+            **Intensity:** RPE 6–7  
+            **Rest:** 60–90 seconds  
+            **Safety Cue:** Keep your body straight and core tight.  
+            **Contraindications:** None  
+            ---
+
+            Each exercise should follow **exactly this spacing**, with double spaces after each line for Markdown readability.
+
+            6️⃣ **🧘‍♀️ Cool-down Section:**  
+            3–4 cool-down stretches (Child’s Pose, Forward Fold, Shoulder Stretch) with benefits and duration.
+
+            7️⃣ **📈 Progression Tips:**  
+            How to safely increase difficulty over weeks.
+
+            8️⃣ **💬 Keep it Up:**  
+            Short motivational note with emojis (💪🔥).
+
+            9️⃣ **💦 Hydration & Safety Reminder:**  
+            Advice on staying hydrated and listening to the body.
+
+            ---
+            ### Context Info:
+            - Name: {name}
+            - Age: {user_profile.get('age')}
+            - Gender: {user_profile.get('gender')}
+            - Height: {user_profile.get('height_cm')} cm, Weight: {user_profile.get('weight_kg')} kg
+            - Fitness Level: {fitness_level}
+            - Goals: {goals}
             - Target Areas: {', '.join(user_profile.get('target_areas', []))}
-            - Workout Location: {user_profile.get('workout_location', 'Home')}
-            - Preferred Duration: {user_profile.get('workout_duration', '20-30 minutes')}
+            - Workout Location: {location}
+            - Equipment: {', '.join(user_profile.get('equipment', []))}
             - Activity Level: {user_profile.get('detailed_activity_level', 'Moderately Active')}
-            - Current Exercise: {user_profile.get('current_exercise', 'No')}
-            - Exercise Frequency: {user_profile.get('exercise_frequency', '0')} times/week
-            - Preferred Weekly Frequency: {user_profile.get('preferred_weekly_frequency', '3')} days/week
-            - Daily Steps: {user_profile.get('daily_steps', 'Not specified')}
-            - Sitting Time: {user_profile.get('sitting_time', 'Not specified')} hours/day
+            - Preferred Weekly Frequency: {sel_days_str}
             - Medical Conditions: {', '.join(user_profile.get('medical_conditions', ['None']))}
-            - Specific Health Issues: {user_profile.get('physical_issues', 'None')}
-            - Smoking: {user_profile.get('smoking', 'No')}
-            - Alcohol: {user_profile.get('alcohol_consumption', 'No')}
-            - Equipment Available: {', '.join(user_profile.get('equipment', []))}
-            - Preferred Exercise Time: {user_profile.get('preferred_time', 'Not specified')}
-            - Weight Change: {user_profile.get('weight_change', 'None')}
-
-            Instructions:
-            1. Start with a warm, casual greeting using their name.
-            2. Provide a BRIEF PERSONALIZED ASSESSMENT (2-3 sentences) addressing their specific situation and goals.
-            3. Prioritize content toward the user's selected health goals; explicitly include cardio if cardiovascular health is a goal.
-            4. Give CUSTOMIZED RECOMMENDATIONS based on medical conditions, activity level, and goals.
-            5. For each recommended exercise, provide a full tutorial in this format:
-                - Exercise Name
-                - Brief Benefit (1-2 sentences)
-                - How to do it: step-by-step guide, clearly numbered as Step 1, Step 2, Step 3, etc.
-                - Sets/Reps or Duration
-                - Intensity (use RPE 1–10 for bodyweight/mobility exercises; use %1RM or a % range for weighted exercises when appropriate)
-                - Rest between sets (give recommended rest in seconds/minutes and link to training goal)
-                - Safety Cue: 1-2 sentences (explicit safety advice and what to watch for)
-                - Contraindications: list medical conditions that would make this exercise inappropriate (if any)
-            6. If an exercise would be contraindicated for the user's listed medical conditions, do NOT recommend it; instead suggest a safer alternative and explain why.
-            7. Specify whether the plan is for a single session or a weekly routine, and provide a short weekly frequency schedule when applicable.
-            8. For bodyweight strength exercises where the user's exact strength is unknown, recommend AMRAP or scaled alternatives rather than a fixed rep target.
-            9. Use ACE-style rest guidance and tailor rest to each exercise and the user's level.
-            10. Avoid overclaiming clinical benefits; when in doubt recommend referral to a clinician/physiotherapist.
-            11. Be specific about progression and include short notes on when/how to progress intensity or load.
-            12. Keep tone conversational, encouraging, and safety-first. Include safety cues and when to stop or seek medical advice.
-
-            Make the response feel like it's written specifically for {user_profile['name']} based on all their inputs, not generic advice.
+            - Physical Issues: {user_profile.get('physical_issues', 'None')}
+            ---
             """
 
             headers = {
@@ -337,82 +390,175 @@ class FitnessAdvisor:
             }
 
             payload = {
-                "model": "mistral-small",
+                "model": "fitness-advisor",
                 "messages": [
-                    {"role": "system", "content": "You are FriskaAI, a friendly, knowledgeable personal fitness coach who creates highly personalized, encouraging workout plans with a casual, supportive tone."},
+                    {"role": "system", "content": "You are FriskaAI, an expert personal trainer who writes perfectly formatted Markdown workout plans."},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": 0.7,
-                "max_tokens": 1500
+                "temperature": 0.8,
+                "max_tokens": 7000
             }
 
-            # call the API with a timeout
-            resp = requests.post(self.endpoint_url, headers=headers, json=payload, timeout=30)
+            resp = requests.post(self.endpoint_url, headers=headers, json=payload, timeout=60)
 
-            # on success try multiple extraction patterns
             if resp.status_code == 200:
-                try:
-                    result = resp.json()
-                except Exception:
-                    # Not JSON - return raw text for debugging
-                    return resp.text or "Empty response from model (non-JSON)."
+                result = resp.json()
+                choices = result.get("choices")
+                if choices:
+                    msg = choices[0].get("message", {})
+                    content = msg.get("content") or choices[0].get("text")
 
-                # Common patterns: choices[].message.content, choices[].text, output, result['choices'][0]['message']['content']
-                content = None
-                if isinstance(result, dict):
-                    choices = result.get("choices")
-                    if choices and len(choices) > 0:
-                        first = choices[0]
-                        if isinstance(first, dict):
-                            # OpenAI-style chat completion
-                            msg = first.get("message")
-                            if msg and isinstance(msg, dict) and msg.get("content"):
-                                content = msg["content"]
-                            # older/other variants
-                            elif first.get("text"):
-                                content = first.get("text")
-                            elif first.get("message") and isinstance(first.get("message"), str):
-                                content = first.get("message")
-                    # other vendor keys
-                    if not content:
-                        if "output" in result:
-                            content = result["output"]
-                        elif "data" in result:
-                            content = json.dumps(result["data"])
-                # fallback to stringified JSON
-                if not content:
-                    try:
-                        content = json.dumps(result, indent=2)
-                    except Exception:
-                        content = str(result)
-                return content
-            else:
-                # return status and body to make debugging visible in UI
-                text = resp.text
-                return f"Error generating response: status={resp.status_code} body={text}"
+                    if content:
+                        # --- Cleanup for perfect formatting ---
+                        content = content.replace("\r\n", "\n").strip()
+                        content = re.sub(r"\n{3,}", "\n\n", content)
 
-        except requests.exceptions.Timeout:
-            return "Error: The API request timed out."
+                        # Ensure each key label has its own line with spacing
+                        labels = [
+                            "Benefit", "How to do it", "Sets", "Reps",
+                            "Intensity", "Rest", "Safety Cue", "Contraindications"
+                        ]
+                        for label in labels:
+                            content = re.sub(
+                                rf"(\*\*{label}:\*\*)", r"\n\1", content
+                            )
+                            content = re.sub(
+                                rf"(\*\*{label}:\*\*)(?!\s*\n)", r"\1 ", content
+                            )
+                        # Add blank line before next exercise block
+                        content = re.sub(r"(\*\*Contraindications:\*\*.*)", r"\1\n", content)
+
+                        return content
+
+            # fallback local generation
+            return self.generate_local_daywise_plan(user_profile)
+
         except Exception as e:
-            return f"Error: {str(e)}"
-    
-    def analyze_lifestyle(self, profile: Dict) -> str:
-        """Analyze user's lifestyle for better recommendations"""
-        analysis = []
-        
-        sitting_time = profile.get('sitting_time', 0)
-        if sitting_time and int(sitting_time) > 8:
-            analysis.append("high_sedentary")
-        
-        if profile.get('smoking') == 'Yes':
-            analysis.append("smoker")
-        
-        current_exercise = profile.get('current_exercise', 'No')
-        if current_exercise == 'No':
-            analysis.append("inactive")
-        
-        return analysis
+            return f"⚠️ Error generating structured plan: {e}\n\n{self.generate_local_daywise_plan(user_profile)}"
 
+    def generate_local_daywise_plan(self, user_profile: Dict) -> str:
+        """Deterministic, full Markdown day-wise plan generator (5–7 exercises/day, variations, RM/RPE rules)."""
+        name = user_profile.get("name", "Client")
+        age = user_profile.get("age", "N/A")
+        fitness_level = user_profile.get("fitness_level", "N/A")
+        goals = user_profile.get("goals", [])
+        goals_str = ", ".join(goals) if goals else "General fitness"
+        selected_days = user_profile.get("selected_days") or []
+        if not selected_days:
+            freq = int(user_profile.get("preferred_weekly_frequency", 3))
+            week_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            selected_days = week_order[:max(1, min(7, freq))]
+
+        location = user_profile.get("workout_location", "Home")
+        medical_conditions = user_profile.get("medical_conditions", ["None"])
+
+        # gather safe exercises
+        candidates = list(self.exercise_db.get_exercises_by_target_area(user_profile.get("target_areas") or ["Full Body"], location).values())
+        # broaden if too few
+        if len(candidates) < 8:
+            candidates = list(self.exercise_db.exercises.values()) + list(self.exercise_db.gym_exercises.values())
+
+        safe_candidates = [ex for ex in candidates if not self.exercise_db.is_contraindicated(ex, medical_conditions)]
+
+        if not safe_candidates:
+            return f"Hey {name}, I couldn't find safe exercises for your listed medical conditions. Please update your medical info or consult a clinician."
+
+        # Ensure consistent ordering but change exercises between days
+        safe_candidates = sorted(safe_candidates, key=lambda x: (-x.get("rating", 0), x["name"]))
+
+        # Prepare warm-ups and cardio if requested
+        warmups = [
+            ("Jumping Jacks", "Increase heart rate and warm up the body", ["Stand upright; Jump feet out and raise arms; Reverse and repeat"], "2 minutes", "RPE 4"),
+            ("Arm Circles", "Warm up shoulder joints", ["Stand tall; Extend arms; Make circular movements"], "1 minute", "RPE 2-3"),
+            ("Leg Swings", "Mobilize hips and hamstrings", ["Support yourself; Swing leg forward/back; Repeat other side"], "1 minute", "RPE 2-3")
+        ]
+
+        include_cardio = "Improve Cardiovascular Fitness" in goals
+
+        # Build plan header (markdown)
+        md = []
+        md.append(f"### 🏋️‍♂️ Your Personalized Fitness Plan")
+        md.append(f"**👋 Hey {name}!** Ready to start?  ")
+        md.append(f"**📊 Assessment:** {age} yrs · {fitness_level} · Goals: {goals_str}  ")
+        md.append(f"**💡 Recommendations:** We'll follow a {len(selected_days)}-day weekly routine ({', '.join(selected_days)}). Focus on progressive strength with built-in variation and safety-first cues.  ")
+        if include_cardio:
+            md.append("Because cardiovascular fitness is a selected goal, at least one session each week will include a cardio block (type, duration, intensity).  ")
+
+        md.append(f"---")
+        md.append(f"#### Workout Plan ({len(selected_days)} days/week, tailored sessions)\n")
+
+        # Create distinct day templates (rotate focus across days)
+        targets = user_profile.get("target_areas") or ["Full Body"]
+        # ensure we don't repeat exact exercises across days by cycling index
+        idx = 0
+        used_names = set()
+        for d_i, day in enumerate(selected_days):
+            focus = targets[d_i % len(targets)] if targets else "Full Body"
+            md.append(f"**{day} — Focus: {focus}**  ")
+            # Warm-up
+            md.append(f"- **Warm-up:** {', '.join([f'{w[0]} ({w[3]})' for w in warmups[:2]])} — RPE 3–4  ")
+            if include_cardio and d_i == 0:
+                md.append(f"- **Cardio block:** 12–15 minutes steady-state (e.g., brisk bike or treadmill) — RPE 5–6  ")
+
+            # pick 5–7 varied exercises for the day
+            day_exs = []
+            # prioritize exercises that match the focus
+            focus_matches = [ex for ex in safe_candidates if focus == "Full Body" or focus in ex.get("target_areas", [])]
+            # fill with top-rated then rotate
+            pick_pool = focus_matches if focus_matches else safe_candidates
+            # select sequential chunk to minimize repeats between days
+            for _ in range(7):
+                if not pick_pool:
+                    break
+                ex = pick_pool[idx % len(pick_pool)]
+                idx += 1
+                if ex["name"] in used_names and len(day_exs) >= 4:
+                    continue
+                day_exs.append(ex)
+                used_names.add(ex["name"])
+                if len(day_exs) >= 6:
+                    break
+            # ensure at least 4 exercises
+            if len(day_exs) < 4:
+                extras = [e for e in safe_candidates if e not in day_exs]
+                day_exs += extras[:(4 - len(day_exs))]
+
+            # render exercises with full details in markdown
+            for i, ex in enumerate(day_exs, 1):
+                uses_weight = any(w.lower() in ("barbell", "dumbbells", "kettlebell", "bench") for w in ex.get("equipment", []))
+                # intensity rules
+                if uses_weight:
+                    intensity = ex.get("intensity") or "70% 1RM (RPE 7)"
+                    # ensure RM/RPE mention
+                    if "rm" not in intensity.lower() and "%" not in intensity:
+                        intensity = intensity + " — RM/%1RM + RPE"
+                else:
+                    intensity = ex.get("intensity") or "RPE 6-7"
+                    if "rpe" not in intensity.lower():
+                        intensity = f"{intensity} (RPE)"
+
+                md.append(f"{i}. **{ex['name']}**  ")
+                md.append(f"   - *Benefit:* {ex.get('benefits','')}  ")
+                steps = ex.get("steps", [])
+                if steps:
+                    md.append(f"   - *How to do it:* " + " ".join([f"Step{j+1}: {s}." for j,s in enumerate(steps[:4])]) + "  ")
+                md.append(f"   - *Sets/Reps:* {ex.get('reps','See below')}  ")
+                md.append(f"   - *Intensity:* {intensity}  ")
+                md.append(f"   - *Rest:* {ex.get('rest','60-90 sec')}  ")
+                md.append(f"   - *Safety Cue:* {ex.get('safety','Move with control; stop on sharp pain.')}  ")
+                contras = ex.get('contraindications', [])
+                md.append(f"   - *Contraindications:* {', '.join(contras) if contras else 'None'}  ")
+                # find a variation (different exercise targeting same area)
+                variation = next((c['name'] for c in safe_candidates if c['name'] != ex['name'] and set(c.get('target_areas', [])) & set(ex.get('target_areas', []))), None)
+                md.append(f"   - *Variation:* {variation if variation else 'Change tempo, reduce range, or pick similar movement.'}  ")
+            md.append(f"- **Cool-down:** 4–6 minutes light stretching / mobility  ")
+            md.append("")  # blank line between days
+
+        md.append("---")
+        md.append("**Progression:** Increase load or RPE gradually; aim to increase reps or weight every 1–2 weeks. Swap in the listed variations week-to-week for variety.")
+        md.append("**Safety note:** Stop for sharp pain, and consult a clinician/physiotherapist for exercise choices related to specific medical conditions.")
+        # join as Markdown
+        return "\n\n".join(md)
 # Initialize fitness advisor
 fitness_advisor = FitnessAdvisor(API_KEY, ENDPOINT_URL)
 
@@ -648,24 +794,25 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
 
                 st.success("✅ Your personalized workout plan is ready!")
                 st.markdown("---")
-                
-                # Format the response nicely
+
+                # Render plan header and the AI output preserving Markdown/HTML
                 st.markdown("## 🏋️‍♂️ Your Personalized Fitness Plan")
                 
-                # Split response into sections for better formatting
-                if "BRIEF PERSONALIZED ASSESSMENT" in workout_plan or "assessment" in workout_plan.lower():
-                    sections = workout_plan.split('\n\n')
-                    for i, section in enumerate(sections):
-                        if i == 0:  # First section is usually greeting
-                            st.markdown(f"### 👋 {section}")
-                        elif "assessment" in section.lower():
-                            st.markdown(f"### 📊 {section}")
-                        elif "recommendation" in section.lower():
-                            st.markdown(f"### 💡 {section}")
-                        else:
-                            st.markdown(section)
+                # Normalize newlines
+                plan_text = workout_plan.replace('\r\n', '\n').strip()
+                
+                # If the model returned HTML blocks, render as HTML. Otherwise render as Markdown.
+                # Also convert plain text day headers like "Mon —" into Markdown headers for readability.
+                # Convert day headers to "#### Mon —" only when not already a Markdown header.
+                if not re.search(r'(^#{1,6}\s)|(<h[1-6])', plan_text):
+                    # replace lines like "Mon — Focus:" with "#### Mon — Focus:" for clarity
+                    plan_text = re.sub(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*—', r'#### \1 —', plan_text, flags=re.MULTILINE)
+                
+                # Choose unsafe_allow_html when HTML tags are present
+                if re.search(r'<\/?\w+[^>]*>', plan_text):
+                    st.markdown(plan_text, unsafe_allow_html=True)
                 else:
-                    st.markdown(workout_plan)
+                    st.markdown(plan_text)
                 
                 # Show recommended exercises from AI response only, formatted impressively
                 st.markdown("---")
@@ -766,7 +913,7 @@ if st.button("🚀 Generate My Personalized Workout Plan", type="primary"):
                 if exercise_details:
                     for i, (key, exercise) in enumerate(exercise_details):
                         st.markdown(f"""
-<div style='background:#e3f2fd;border-radius:10px;padding:18px;margin-bottom:18px;box-shadow:0 2px 8px #bdbdbd;'>
+<div style='background:#000000;border-radius:10px;padding:18px;margin-bottom:18px;box-shadow:0 2px 8px #bdbdbd;'>
   <h3 style='color:#1565c0;margin-bottom:8px;'>⭐ {exercise['name']} <span style='font-size:0.8em;color:#888;'>(Rating: {exercise.get('rating','N/A')}/5)</span></h3>
   <b>Benefit:</b> {exercise['benefits']}<br>
   <b>Type:</b> {exercise['type']}<br>
